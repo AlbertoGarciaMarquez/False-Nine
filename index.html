@@ -327,6 +327,8 @@ html,body{min-height:100%;background:var(--bg);font-family:'Inter',sans-serif;co
   </div>
   <div class="start-btn-wrap">
     <button class="btn btn-lg bg" onclick="startDraft()">COMENZAR DRAFT</button>
+    <button class="btn btn-lg bgh" id="continue-btn" onclick="continueGame()" style="display:none;margin-top:8px;">CONTINUAR PARTIDA</button>
+    <button class="btn btn-lg bgh" id="delete-save-btn" onclick="deleteSave()" style="display:none;margin-top:8px;">BORRAR PARTIDA GUARDADA</button>
   </div>
   <div class="t-note">Fan-made · No afiliado a La Liga</div>
 </div>
@@ -795,6 +797,143 @@ let trainP=-1, trainS=-1;
 let curEvt=null;
 
 // ═══════════════════════════════════════════════════════
+// SAVE SYSTEM
+// ═══════════════════════════════════════════════════════
+const SAVE_KEY = 'false-nine-save-v1';
+
+function cloneData(data){
+  return JSON.parse(JSON.stringify(data));
+}
+
+function getCurrentPage(){
+  const page = document.querySelector('.pg.on');
+  if(!page) return 'title';
+  return page.id.replace('pg-', '');
+}
+
+function hasSave(){
+  return localStorage.getItem(SAVE_KEY) !== null;
+}
+
+function refreshSaveButtons(){
+  const continueBtn = document.getElementById('continue-btn');
+  const deleteBtn = document.getElementById('delete-save-btn');
+
+  if(!continueBtn || !deleteBtn) return;
+
+  const exists = hasSave();
+  continueBtn.style.display = exists ? 'block' : 'none';
+  deleteBtn.style.display = exists ? 'block' : 'none';
+}
+
+function saveGame(){
+  try{
+    const saveData = {
+      savedAt: new Date().toISOString(),
+      page: getCurrentPage(),
+
+      G: cloneData({
+        ...G,
+        matchIv: null
+      }),
+
+      draftStep,
+      draftPicks: cloneData(draftPicks),
+      draftSelected,
+      draftOptions: cloneData(draftOptions),
+      draftResolvedPos: cloneData(draftResolvedPos),
+
+      signOptions: typeof signOptions !== 'undefined' ? cloneData(signOptions) : [],
+      signSelected: typeof signSelected !== 'undefined' ? signSelected : -1,
+      signNodeIdx: typeof signNodeIdx !== 'undefined' ? signNodeIdx : -1,
+
+      trainP,
+      trainS,
+
+      preForm: typeof preForm !== 'undefined' ? preForm : '4-3-3',
+      preStyle: typeof preStyle !== 'undefined' ? preStyle : 'posesion'
+    };
+
+    localStorage.setItem(SAVE_KEY, JSON.stringify(saveData));
+    refreshSaveButtons();
+  }catch(e){
+    console.warn('No se pudo guardar la partida:', e);
+  }
+}
+
+function continueGame(){
+  const raw = localStorage.getItem(SAVE_KEY);
+  if(!raw){
+    alert('No hay partida guardada.');
+    return;
+  }
+
+  try{
+    const saveData = JSON.parse(raw);
+
+    G = {
+      ...G,
+      ...saveData.G,
+      matchIv: null
+    };
+
+    draftStep = saveData.draftStep ?? 0;
+    draftPicks = saveData.draftPicks ?? [];
+    draftSelected = saveData.draftSelected ?? -1;
+    draftOptions = saveData.draftOptions ?? [];
+    draftResolvedPos = saveData.draftResolvedPos ?? [];
+
+    if(typeof signOptions !== 'undefined') signOptions = saveData.signOptions ?? [];
+    if(typeof signSelected !== 'undefined') signSelected = saveData.signSelected ?? -1;
+    if(typeof signNodeIdx !== 'undefined') signNodeIdx = saveData.signNodeIdx ?? -1;
+
+    trainP = saveData.trainP ?? -1;
+    trainS = saveData.trainS ?? -1;
+
+    if(typeof preForm !== 'undefined') preForm = saveData.preForm ?? '4-3-3';
+    if(typeof preStyle !== 'undefined') preStyle = saveData.preStyle ?? 'posesion';
+
+    if(saveData.page === 'draft'){
+      showPg('draft');
+      renderDraftStep();
+      return;
+    }
+
+    if(saveData.page === 'draft-summary'){
+      showDraftSummary();
+      return;
+    }
+
+    if(saveData.page === 'squad'){
+      renderSquad();
+      showPg('squad');
+      return;
+    }
+
+    if(saveData.page === 'result'){
+      afterResult();
+      return;
+    }
+
+    renderMap();
+    showPg('map');
+
+  }catch(e){
+    console.warn('No se pudo cargar la partida:', e);
+    alert('La partida guardada está dañada. Puedes borrarla y empezar una nueva.');
+  }
+}
+
+function deleteSave(){
+  if(!confirm('¿Seguro que quieres borrar la partida guardada?')) return;
+  localStorage.removeItem(SAVE_KEY);
+  refreshSaveButtons();
+  location.reload();
+}
+
+window.addEventListener('load', refreshSaveButtons);
+
+// ═══════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════
 function rnd(a){return a[Math.floor(Math.random()*a.length)];}
@@ -863,6 +1002,7 @@ function startDraft(){
   draftStep=0; draftPicks=[]; draftSelected=-1; draftResolvedPos=[];
   showPg('draft');
   renderDraftStep();
+  saveGame();
 }
 
 function renderDraftStep(){
@@ -931,6 +1071,7 @@ function confirmDraftPick(){
   } else {
     renderDraftStep();
   }
+  saveGame();
 }
 
 function showDraftSummary(){
@@ -960,6 +1101,7 @@ function startSeason(){
   G.defeats=0; G.position=10+rndI(0,4); G.points=0;
   G.mapNodes=generateMap(); G.curNode=0;
   renderMap(); showPg('map');
+  saveGame();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1062,7 +1204,7 @@ function renderMap(){
   });
 }
 
-function setFork(idx,ch){G.mapNodes[idx].chosenFork=ch;renderMap();}
+function setFork(idx,ch){G.mapNodes[idx].chosenFork=ch;renderMap();saveGame();}
 
 function clickNode(idx){
   if(idx!==G.curNode) return;
@@ -1076,14 +1218,15 @@ function clickNode(idx){
 
 function advance(){
   G.curNode++;
-  if(G.curNode>=G.mapNodes.length){endSeason();return;}
+  if(G.curNode>=G.mapNodes.length){saveGame();endSeason();return;}
   const n=G.mapNodes[G.curNode];
   if(n&&n.type==='checkpoint'){
     n.done=true;
-    showAnn('🌍','Parón Internacional','Mercado ampliado en el siguiente nodo de fichaje.',null,()=>{G.curNode++;renderMap();showPg('map');});
+    saveGame();
+    showAnn('🌍','Parón Internacional','Mercado ampliado en el siguiente nodo de fichaje.',null,()=>{G.curNode++;renderMap();showPg('map');saveGame();});
     return;
   }
-  renderMap();showPg('map');
+  renderMap();showPg('map');saveGame();
 }
 
 function endSeason(){
@@ -1134,6 +1277,7 @@ function doSwap(outIdx,nodeIdx){
   const out=G.squad[outIdx];
   G.squad[outIdx]={...inc};
   G.mapNodes[nodeIdx].done=true;
+  saveGame();
   showAnn('✅','¡Fichaje completado!',`${out.name} sale · ${inc.name} entra`,inc,()=>advance());
 }
 
@@ -1162,6 +1306,7 @@ function confirmTrain(idx){
   const keys=['vel','pax','dis','def','fis'],labels=['VEL','PAX','DIS','DEF','FÍS'];
   p[keys[trainS]]=Math.min(99,p[keys[trainS]]+3);
   G.mapNodes[idx].done=true;
+  saveGame();
   showAnn('🏋️','¡Entrenamiento!',`${p.name}: +3 ${labels[trainS]} → ${p[keys[trainS]]}`,null,()=>advance());
 }
 
@@ -1183,6 +1328,7 @@ function chooseEv(i,idx){
   document.getElementById('ev-res').textContent='Resultado: '+curEvt.outcomes[i];
   document.getElementById('ev-res').style.display='block';
   document.getElementById('ev-cont').style.display='block';
+  saveGame();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1197,9 +1343,9 @@ function openSponsor(idx){
     <button class="btn btn-lg bgh" style="margin-top:8px;" onclick="skipNode(${idx})">Rechazar</button>`;
   showPg('node');
 }
-function accSponsor(idx,amt){G.budget+=amt;G.mapNodes[idx].done=true;showAnn('💰','Sponsor aceptado',`+${amt.toLocaleString('es')}€ añadidos`,null,()=>advance());}
+function accSponsor(idx,amt){G.budget+=amt;G.mapNodes[idx].done=true;saveGame();showAnn('💰','Sponsor aceptado',`+${amt.toLocaleString('es')}€ añadidos`,null,()=>advance());}
 
-function skipNode(idx){G.mapNodes[idx].done=true;advance();}
+function skipNode(idx){G.mapNodes[idx].done=true;saveGame();advance();}
 
 // ═══════════════════════════════════════════════════════
 // PRE-MATCH
@@ -1213,9 +1359,7 @@ function openPre(idx){
   const hp=tpow(G.squad), ap=Math.round(rival.str*10*(isHard?1.2:.92));
   const hpct=Math.round(hp/(hp+ap)*100);
   preForm='4-3-3'; preStyle='posesion';
-  const xi=G.squad.slice(0,11);
-  function xrow(pl){return `<div class="xi-row">${pl.map(p=>`<div class="xi-s"><div class="xi-d">${p.name.slice(0,3).toUpperCase()}</div><div class="xi-n">${p.name.split(' ')[0]}</div></div>`).join('')}</div>`;}
-  const xiH=`${xrow([xi[0]])}${xrow(xi.slice(1,5))}${xrow(xi.slice(5,8))}${xrow(xi.slice(8,11))}`;
+
   document.getElementById('pre-content').innerHTML=`
     <div class="mv">
       <div class="mv-t"><div class="mv-tn">${G.clubName}</div><div class="mv-vs">VS</div><div class="mv-tn">${rival.name}</div></div>
@@ -1230,7 +1374,7 @@ function openPre(idx){
       <div class="stb" onclick="pStyle(this,'contra')"><div class="stb-i">⚡</div><div class="stb-n">Contra</div><div class="stb-d">VEL+10 ATQ−4</div></div>
     </div>
     <div class="sl">Once titular</div>
-    <div class="pitch">${xiH}</div>
+    <div class="pitch" id="pitch-preview"></div>
     <div class="sl">Poder</div>
     <div class="pc2">
       <div class="pc2-s"><div class="pc2-l">${G.clubName}</div><div class="pc2-v">${hp}</div></div>
@@ -1241,9 +1385,33 @@ function openPre(idx){
     <button class="btn btn-lg bg" onclick="startMatch(${idx},${isHard?1:0})">⚽ JUGAR PARTIDO</button>`;
   G.curMatch={idx,rival,isHard,hp,ap};
   showPg('pre');
+  renderPitch('4-3-3');
 }
-function pForm(el,f){preForm=f;document.querySelectorAll('.fb').forEach(b=>b.classList.remove('fbc'));el.classList.add('fbc');}
-function pStyle(el,s){preStyle=s;document.querySelectorAll('.stb').forEach(b=>b.classList.remove('stbc'));el.classList.add('stbc');}
+function renderPitch(formation){
+  const xi=G.squad.slice(0,11);
+  function xrow(pl){return `<div class="xi-row">${pl.map(p=>`<div class="xi-s"><div class="xi-d">${p.name.slice(0,3).toUpperCase()}</div><div class="xi-n">${p.name.split(' ')[0]}</div></div>`).join('')}</div>`;}
+  const layouts = {
+    '4-3-3': [1,4,3,3],
+    '4-4-2': [1,4,4,2],
+    '3-5-2': [1,3,5,2],
+    '5-3-2': [1,5,3,2],
+    '4-2-3-1': [1,4,2,3,1],
+    '3-4-3': [1,3,4,3],
+  };
+  const layout = layouts[formation] || [1,4,3,3];
+  let html='', idx=0;
+  layout.forEach(n=>{ html+=xrow(xi.slice(idx,idx+n)); idx+=n; });
+  const pitch=document.getElementById('pitch-preview');
+  if(pitch) pitch.innerHTML=html;
+}
+function pForm(el,f){
+  preForm=f;
+  document.querySelectorAll('.fb').forEach(b=>b.classList.remove('fbc'));
+  el.classList.add('fbc');
+  renderPitch(f);
+  saveGame();
+}
+function pStyle(el,s){preStyle=s;document.querySelectorAll('.stb').forEach(b=>b.classList.remove('stbc'));el.classList.add('stbc');saveGame();}
 
 // ═══════════════════════════════════════════════════════
 // MATCH ENGINE
@@ -1309,6 +1477,7 @@ function startMatch(idx,isHard){
   document.getElementById('m-ml').textContent="Minuto 0'";
   document.getElementById('m-feed').innerHTML='';
   showPg('match');
+  saveGame();
   let cur=0;
   G.matchIv=setInterval(()=>{
     cur=Math.min(cur+3,90);
@@ -1365,6 +1534,7 @@ function showResult(){
     <div class="mor"><div class="mor-i">${m.i}</div><div><div class="mor-t">${m.t}</div><div class="mor-s">${m.s}</div></div></div>
     <button class="btn btn-lg bg" onclick="afterResult()">Continuar →</button>`;
   showPg('result');
+  saveGame();
 }
 
 function afterResult(){
@@ -1391,8 +1561,8 @@ function renderSquad(){
 // END STATES
 // ═══════════════════════════════════════════════════════
 function stHTML(){return `<div class="es-b"><div class="es-v">${G.wins}</div><div class="es-l">Victorias</div></div><div class="es-b"><div class="es-v">${G.draws}</div><div class="es-l">Empates</div></div><div class="es-b"><div class="es-v">${G.losses}</div><div class="es-l">Derrotas</div></div>`;}
-function showGameOver(r){document.getElementById('go-s').textContent=r;document.getElementById('go-st').innerHTML=stHTML();showPg('go');}
-function showChampion(){document.getElementById('ch-s').textContent=G.clubName+' · Campeón de La Liga 2025/26 · '+G.points+' puntos';document.getElementById('ch-st').innerHTML=stHTML();showPg('ch');}
+function showGameOver(r){document.getElementById('go-s').textContent=r;document.getElementById('go-st').innerHTML=stHTML();showPg('go');saveGame();}
+function showChampion(){document.getElementById('ch-s').textContent=G.clubName+' · Campeón de La Liga 2025/26 · '+G.points+' puntos';document.getElementById('ch-st').innerHTML=stHTML();showPg('ch');saveGame();}
 
 // ═══════════════════════════════════════════════════════
 // ANNOUNCE

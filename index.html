@@ -783,7 +783,17 @@ function goPage(id){
 // ══════════════════════════════════════
 // TITLE / CLUB SELECT
 // ══════════════════════════════════════
-(function(){
+let chosenClubIdx = 0;
+
+function chooseClub(i){
+  chosenClubIdx = i;
+  document.querySelectorAll('.club-card').forEach(c=>c.classList.remove('chosen'));
+  const el = document.getElementById('cc-'+i);
+  if(el) el.classList.add('chosen');
+}
+
+function initTitleScreen(){
+  CLUBS = buildClubSelection();
   const grid = document.getElementById('club-select-grid');
   grid.innerHTML = CLUBS.map((c,i)=>`
     <div class="club-card" id="cc-${i}" onclick="chooseClub(${i})">
@@ -794,14 +804,9 @@ function goPage(id){
     </div>
   `).join('');
   chooseClub(0);
-})();
-
-let chosenClubIdx = 0;
-function chooseClub(i){
-  chosenClubIdx = i;
-  document.querySelectorAll('.club-card').forEach(c=>c.classList.remove('chosen'));
-  document.getElementById('cc-'+i).classList.add('chosen');
 }
+
+document.addEventListener('DOMContentLoaded', initTitleScreen);
 
 function startGame(){
   try{localStorage.removeItem('fn_save');}catch(e){}
